@@ -21,5 +21,5 @@ func main() {
 
 	m := inst.Get("Add")
 	r := m.(func([]interface{}) interface{})([]interface{}{1, 3})
-	fmt.Println(r)
+	fmt.Printf("1 + 3 = %v\n", r)
 }
