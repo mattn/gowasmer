@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	b, err := ioutil.ReadFile("wasm-example")
+	b, err := ioutil.ReadFile("wasm/wasm-example")
 	if err != nil {
 		log.Fatal(err)
 	}
