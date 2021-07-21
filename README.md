@@ -1,5 +1,7 @@
 # gowasmer
 
+![gowasmer](https://raw.githubusercontent.com/mattn/gowasmer/main/_example/screenshot.png)
+
 Go Runtime for wasmer. wasmer is possible to run WASM binary but not possible to run Go's one since it require runtime that is included in wasm_exec.js. This package enable to run Go's WASM app using wasmer. You can run Go's wasm with non-JS environment.
 
 ## Usage
