@@ -1,10 +1,9 @@
-package main
+package gowasmer
 
 import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math"
 	"os"
@@ -14,7 +13,8 @@ import (
 	"github.com/wasmerio/wasmer-go/wasmer"
 )
 
-type Data struct {
+type GoInstance struct {
+	inst   *wasmer.Instance
 	mem    *wasmer.Memory
 	getsp  wasmer.NativeFunction
 	resume wasmer.NativeFunction
@@ -22,30 +22,30 @@ type Data struct {
 	ids    map[string]uint32
 }
 
-func (d *Data) Get(name string) interface{} {
+func (d *GoInstance) Get(name string) interface{} {
 	return d.values[5].(map[string]interface{})[name]
 }
 
-func (d *Data) getInt32(addr int32) int32 {
+func (d *GoInstance) getInt32(addr int32) int32 {
 	return int32(binary.LittleEndian.Uint32(d.mem.Data()[addr+0:]))
 }
 
-func (d *Data) getInt64(addr int32) int64 {
+func (d *GoInstance) getInt64(addr int32) int64 {
 	low := binary.LittleEndian.Uint32(d.mem.Data()[addr+0:])
 	high := binary.LittleEndian.Uint32(d.mem.Data()[addr+4:])
 	return int64(low) + int64(high)*4294967296
 }
 
-func (d *Data) setInt32(addr int32, v int64) {
+func (d *GoInstance) setInt32(addr int32, v int64) {
 	binary.LittleEndian.PutUint32(d.mem.Data()[addr+0:], uint32(v))
 }
 
-func (d *Data) setInt64(addr int32, v int64) {
+func (d *GoInstance) setInt64(addr int32, v int64) {
 	binary.LittleEndian.PutUint32(d.mem.Data()[addr+0:], uint32(v))
 	binary.LittleEndian.PutUint32(d.mem.Data()[addr+4:], uint32(v/4294967296))
 }
 
-func (d *Data) reflectSet(v interface{}, key interface{}, value interface{}) {
+func (d *GoInstance) reflectSet(v interface{}, key interface{}, value interface{}) {
 	if v == nil {
 		v = d.values[5]
 		panic(v)
@@ -62,7 +62,7 @@ func (d *Data) reflectSet(v interface{}, key interface{}, value interface{}) {
 	arr[i] = value
 }
 
-func (d *Data) reflectDelete(v interface{}, key interface{}) {
+func (d *GoInstance) reflectDelete(v interface{}, key interface{}) {
 	if v == nil {
 		v = d.values[5]
 	}
@@ -79,7 +79,7 @@ func (d *Data) reflectDelete(v interface{}, key interface{}) {
 	}
 }
 
-func (d *Data) reflectGet(v interface{}, key interface{}) interface{} {
+func (d *GoInstance) reflectGet(v interface{}, key interface{}) interface{} {
 	if v == nil {
 		v = d.values[5]
 	}
@@ -94,17 +94,19 @@ func (d *Data) reflectGet(v interface{}, key interface{}) interface{} {
 	return arr[i]
 }
 
-func (d *Data) loadString(addr int32) string {
+func (d *GoInstance) loadString(addr int32) string {
 	array := d.getInt64(addr + 0)
 	alen := d.getInt64(addr + 8)
 	return string(d.mem.Data()[array : array+alen])
 }
-func (d *Data) loadSlice(addr int32) []byte {
+
+func (d *GoInstance) loadSlice(addr int32) []byte {
 	array := d.getInt64(addr + 0)
 	alen := d.getInt64(addr + 8)
 	return d.mem.Data()[array : array+alen]
 }
-func (d *Data) loadValue(addr int32) interface{} {
+
+func (d *GoInstance) loadValue(addr int32) interface{} {
 	bits := binary.LittleEndian.Uint64(d.mem.Data()[addr+0:])
 	fv := math.Float64frombits(bits)
 	if fv == 0 {
@@ -117,7 +119,8 @@ func (d *Data) loadValue(addr int32) interface{} {
 	//fmt.Println("loadValue", id, data.values[id])
 	return d.values[id]
 }
-func (d *Data) loadSliceOfValues(addr int32) []interface{} {
+
+func (d *GoInstance) loadSliceOfValues(addr int32) []interface{} {
 	array := d.getInt64(addr + 0)
 	alen := d.getInt64(addr + 8)
 	results := []interface{}{}
@@ -126,7 +129,8 @@ func (d *Data) loadSliceOfValues(addr int32) []interface{} {
 	}
 	return results
 }
-func (d *Data) storeValue(addr int32, v interface{}) {
+
+func (d *GoInstance) storeValue(addr int32, v interface{}) {
 	nanHead := 0x7FF80000
 
 	if vv, ok := v.(int64); ok {
@@ -183,7 +187,7 @@ func (d *Data) storeValue(addr int32, v interface{}) {
 	binary.LittleEndian.PutUint32(d.mem.Data()[addr:], id)
 }
 
-func goRuntime(store *wasmer.Store, data *Data) map[string]wasmer.IntoExtern {
+func goRuntime(store *wasmer.Store, data *GoInstance) map[string]wasmer.IntoExtern {
 	data.values = map[uint32]interface{}{
 		0: nil,
 		1: 0,
@@ -193,7 +197,11 @@ func goRuntime(store *wasmer.Store, data *Data) map[string]wasmer.IntoExtern {
 		5: map[string]interface{}{
 			"console": map[string]interface{}{
 				"log": func(args []interface{}) interface{} {
-					fmt.Println(args...)
+					fmt.Fprintln(os.Stdout, args...)
+					return nil
+				},
+				"error": func(args []interface{}) interface{} {
+					fmt.Fprintln(os.Stderr, args...)
 					return nil
 				},
 			},
@@ -546,30 +554,27 @@ func goRuntime(store *wasmer.Store, data *Data) map[string]wasmer.IntoExtern {
 	}
 }
 
-func main() {
-	b, err := ioutil.ReadFile("tmp/wasm-example")
-	if err != nil {
-		log.Fatal(err)
-	}
+func NewInstance(b []byte) (*GoInstance, error) {
 	engine := wasmer.NewEngine()
 	store := wasmer.NewStore(engine)
 	module, err := wasmer.NewModule(store, b)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
-	data := &Data{}
+	data := &GoInstance{}
 	importObject := wasmer.NewImportObject()
 	importObject.Register("go", goRuntime(store, data))
 
 	instance, err := wasmer.NewInstance(module, importObject)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
+	data.inst = instance
 
 	mem, err := instance.Exports.GetMemory("mem")
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	data.mem = mem
 
@@ -593,26 +598,24 @@ func main() {
 
 	getsp, err := instance.Exports.GetFunction("getsp")
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	data.getsp = getsp
 
 	resume, err := instance.Exports.GetFunction("resume")
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	data.resume = resume
 
 	run, err := instance.Exports.GetFunction("run")
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	_, err = run(1, 4104)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
-	m := data.Get("Add")
-	r := m.(func([]interface{}) interface{})([]interface{}{1, 3})
-	fmt.Println(r)
+	return data, nil
 }
