@@ -13,6 +13,7 @@ import (
 	"github.com/wasmerio/wasmer-go/wasmer"
 )
 
+// GoInstance is instance of Go Runtime.
 type GoInstance struct {
 	inst   *wasmer.Instance
 	mem    *wasmer.Memory
@@ -22,6 +23,7 @@ type GoInstance struct {
 	ids    map[string]uint32
 }
 
+// Get return Go value specified by name
 func (d *GoInstance) Get(name string) interface{} {
 	return d.values[5].(map[string]interface{})[name]
 }
@@ -554,6 +556,7 @@ func goRuntime(store *wasmer.Store, data *GoInstance) map[string]wasmer.IntoExte
 	}
 }
 
+// NewInstance create instance of GoRuntime.
 func NewInstance(b []byte) (*GoInstance, error) {
 	engine := wasmer.NewEngine()
 	store := wasmer.NewStore(engine)

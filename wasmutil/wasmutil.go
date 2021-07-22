@@ -5,6 +5,7 @@ import (
 	"syscall/js"
 )
 
+// Wrap make function for friendly to js/wasm.
 func Wrap(f interface{}) func(js.Value, []js.Value) interface{} {
 	return func(this js.Value, args []js.Value) interface{} {
 		rf := reflect.ValueOf(f)
