@@ -26,12 +26,8 @@ func Wrap(f interface{}) func(js.Value, []js.Value) interface{} {
 				arg = reflect.ValueOf(args[i].String()).Convert(rt.In(i))
 			case js.TypeSymbol:
 				arg = reflect.ValueOf(args[i].String()).Convert(rt.In(i))
-			case js.TypeObject:
-				arg = reflect.ValueOf(args[i].JSValue()).Convert(rt.In(i))
-			case js.TypeFunction:
-				arg = reflect.ValueOf(args[i].JSValue()).Convert(rt.In(i))
 			default:
-				arg = reflect.ValueOf(args[i].JSValue()).Convert(rt.In(i))
+				panic("type not supported")
 			}
 			rargs = append(rargs, arg)
 		}
